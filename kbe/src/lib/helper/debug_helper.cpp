@@ -314,6 +314,14 @@ void DebugHelper::sync()
 		return;
 	}
 
+	static bool alertmsg = false;
+	if(!alertmsg)
+	{
+		LOG4CXX_WARN(g_logger, fmt::format("The message is forwarded to the messagelog[{}]...\n", 
+			pMessagelogChannel->c_str()));
+		alertmsg = true;
+	}
+
 	int8 v = Mercury::g_trace_packet;
 	Mercury::g_trace_packet = 0;
 
@@ -387,8 +395,6 @@ void DebugHelper::onMessage(uint32 logType, const char * str, uint32 length)
 	if(g_componentType == MACHINE_TYPE || 
 		g_componentType == CONSOLE_TYPE || g_componentType == MESSAGELOG_TYPE)
 		return;
-
-
 
 	if(hasBufferedLogPackets_ > g_kbeSrvConfig.tickMaxBufferedLogs())
 	{
@@ -507,16 +513,22 @@ void DebugHelper::script_msg(const std::string& s)
 {
 	KBEngine::thread::ThreadGuard tg(&this->logMutex); 
 
-	if(s[0] == 'T' && s[10] == '(' && s[32] == ')')
+	if(s[0] == 'T')
 	{
-		if(s.substr(0, 33) == "Traceback (most recent call last)")
-			setScriptMsgType(log4cxx::ScriptLevel::SCRIPT_ERR);
+		if(s.size() >= 10)
+		{
+			if(s.size() >= 33 && s[10] == '(' && s[32] == ')')
+			{
+				if(s.substr(0, 33) == "Traceback (most recent call last)")
+					setScriptMsgType(log4cxx::ScriptLevel::SCRIPT_ERR);
+			}
+			else if(s[9] == ':' && s.substr(0, 10) == "TypeError:")
+			{
+				setScriptMsgType(log4cxx::ScriptLevel::SCRIPT_ERR);
+			}
+		}
 	}
-	else if(s[0] == 'T' && s[9] == ':' && s.substr(0, 10) == "TypeError:")
-	{
-		setScriptMsgType(log4cxx::ScriptLevel::SCRIPT_ERR);
-	}
-	else if(s[0] == 'A' && s[14] == ':' && s.substr(0, 15) == "AssertionError:")
+	else if(s[0] == 'A' && s.size() >= 15 && s[14] == ':' && s.substr(0, 15) == "AssertionError:")
 	{
 		setScriptMsgType(log4cxx::ScriptLevel::SCRIPT_ERR);
 	}

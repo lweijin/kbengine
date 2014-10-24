@@ -2,10 +2,15 @@
 # -*- coding:utf-8 -*-  
 
 import urllib, socket
-import tarfile, zipfile
+import tarfile, zipfile, tempfile
 import os, sys, re, platform, getopt, getpass, random, time, subprocess, shutil, string
 from xml.etree import ElementTree as ET
 from subprocess import check_call
+
+if platform.system() == 'Windows':
+	pass
+else:
+	import pwd
 
 if sys.hexversion >= 0x03000000:
 	import urllib.request
@@ -60,10 +65,16 @@ KBE_HYBRID_PATH = ''
 KBE_UID = ''
 kbe_res_path = ""
 
+# 系统用户名密码, 安装时临时使用
+os_user_name = ""
+os_user_passwd = ""
+
 # 工具环境变量名
 INSTALLER_EVN_NAME = 'KBT'
 
+_zip_kbengine_path = ""
 _zip_kbengine_dirname = ""
+_install_path = ""
 
 def hello():
 	# echoSystemEnvironment()
@@ -82,37 +93,38 @@ def hello():
 	OUT_MSG("")
     
 def help():
-	OUT_MSG("-------------------commands-----------------------")
-	OUT_MSG("\tUsage:")
-	OUT_MSG("\t\tpython installer.py [command]")
+	OUT_MSG("")
+	OUT_MSG("Usage:")
+	OUT_MSG("\tpython installer.py [command]")
 	OUT_MSG("")
 
-	OUT_MSG("\t-i, --install:")
-	OUT_MSG("\t\tInstall KBEngine.")
-	OUT_MSG("\t\tinstaller.py -i : Install from local-disk(Source code), From the KBE_ROOT search.")
-	OUT_MSG("\t\tinstaller.py --install=localsrc : Install from local-disk(Source code), From the KBE_ROOT search.")
-	OUT_MSG("\t\tinstaller.py --install=remotesrc : Install from github(Source code).")
-	OUT_MSG("\t\tinstaller.py --install=bin	: Install from Internet(Binary releases).")
+	OUT_MSG("install:")
+	OUT_MSG("\tInstall KBEngine.\n")
+	OUT_MSG("\tinstaller.py install: Install development environment (dependent, environment variables, etc.), From the KBE_ROOT search.")
+	OUT_MSG("\tinstaller.py install=localsrc : Install from local-disk(Source code), From the KBE_ROOT search.")
+	OUT_MSG("\tinstaller.py install=remotesrc : Install from github(Source code).")
+	OUT_MSG("\tinstaller.py install=remotebin : Install from sourceforge(Binary releases).")
+	OUT_MSG("\tinstaller.py install={xxx.zip, xxx.tar.gz} : Install .zip/.tar.gz file.")
 	OUT_MSG("")
 	
-	OUT_MSG("\t-u, --uninstall:")
-	OUT_MSG("\t\tUninstall KBEngine.")
+	OUT_MSG("uninstall:")
+	OUT_MSG("\tUninstall KBEngine.")
 	OUT_MSG("")
 	
-	OUT_MSG("\t-v, --version:")
-	OUT_MSG("\t\tTo view the KBEngine version.")
+	OUT_MSG("version:")
+	OUT_MSG("\tGet the KBEngine current version.")
 	OUT_MSG("")
 	
-	OUT_MSG("\t-e, --evn:")
-	OUT_MSG("\t\tThe output of the KBEngine environment.")
+	OUT_MSG("evn:")
+	OUT_MSG("\tThe output of the KBEngine environment.")
 	OUT_MSG("")
 	
-	OUT_MSG("\t-r, --resetevn:")
-	OUT_MSG("\t\tReset the KBEngine environment.")
+	OUT_MSG("resetevn:")
+	OUT_MSG("\tReset the KBEngine environment.")
 	OUT_MSG("")
 	
-	OUT_MSG("\t-h, --help:")
-	OUT_MSG("\t\tList all of the command descriptions.")
+	OUT_MSG("help:")
+	OUT_MSG("\tList all of the command descriptions.")
 	OUT_MSG("--------------------------------------------------")
 
 def OUT_MSG(msg):
@@ -147,7 +159,7 @@ def echoKBEEnvironment():
 	OUT_MSG("KBE_ROOT=" + KBE_ROOT)
 	OUT_MSG("KBE_RES_PATH=" + KBE_RES_PATH)
 	OUT_MSG("KBE_HYBRID_PATH=" + KBE_HYBRID_PATH)
-	OUT_MSG("kbe_core_res_path = %s" % kbe_res_path)
+	OUT_MSG("kbe_core_res_path=%s" % kbe_res_path)
 
 def findKBEngine(dir):
 	if len(_zip_kbengine_dirname) > 0:
@@ -164,33 +176,24 @@ def findKBEngine(dir):
 	
 	return paths
 
-def find_file_by_pattern(pattern='.*', base=".", circle=True):  
+def find_file_by_pattern(pattern = '.*', base = ".", circle = True):  
     if base == ".":  
         base = os.getcwd()  
     
     final_file_list = []  
     cur_list = os.listdir(base)  
+    
     for item in cur_list:
     
         full_path = os.path.join(base, item)
-    
-        # 寮傚父澶勭悊
-        if item == ".svn":  
-            continue  
-        
-        if full_path.endswith(".doc") or  \
-            full_path.endswith(".bmp") or \
-            full_path.endswith(".wpt") or \
-            full_path.endswith(".dot"):  
-            continue  
-                 
-        # 鑾峰彇鏂囦欢鍚?
+
         if os.path.isfile(full_path):  
             if full_path.endswith(pattern):  
                 final_file_list.append(full_path)  
         else:
             if (True == circle):  
                 final_file_list += find_file_by_pattern(pattern, full_path, circle)
+
     return final_file_list
     
 def resetKBEEnvironment():
@@ -228,16 +231,16 @@ def resetKBEEnvironment():
 			x_KBE_ROOT.replace("\\", "/").replace("//", "/")
 		
 		if platform.system() == 'Windows':
-			x_KBE_RES_PATH = "%KBE_ROOT%/kbe/res;%KBE_ROOT%/demo/;%KBE_ROOT%/demo/res"
+			x_KBE_RES_PATH = "%KBE_ROOT%/kbe/res/;%KBE_ROOT%/demo/;%KBE_ROOT%/demo/res/"
 		else:
-			x_KBE_RES_PATH = "$KBE_ROOT/kbe/res;$KBE_ROOT/demo/;$KBE_ROOT/demo/res"
+			x_KBE_RES_PATH = "$KBE_ROOT/kbe/res/:$KBE_ROOT/demo/:$KBE_ROOT/demo/res/"
 			
 	if platform.architecture()[0] == '32bit':
-		x_KBE_HYBRID_PATH = "%KBE_ROOT%/kbe/bin/Hybrid"
+		x_KBE_HYBRID_PATH = "%KBE_ROOT%/kbe/bin/Hybrid/"
 	else:
-		x_KBE_HYBRID_PATH = "%KBE_ROOT%/kbe/bin/Hybrid64"
+		x_KBE_HYBRID_PATH = "%KBE_ROOT%/kbe/bin/Hybrid64/"
 		if not os.path.isdir(x_KBE_HYBRID_PATH):
-			x_KBE_HYBRID_PATH = "%KBE_ROOT%/kbe/bin/Hybrid"
+			x_KBE_HYBRID_PATH = "%KBE_ROOT%/kbe/bin/Hybrid/"
 	
 	if platform.system() != 'Windows':
 		x_KBE_HYBRID_PATH.replace("%KBE_ROOT%", "$KBE_ROOT")
@@ -278,9 +281,13 @@ def resetKBEEnvironment():
 			KBE_UID = getInput('reset KBE_UID(No input is [%s]):' % (x_KBE_UID)).strip()
 		else:
 			# Linux需要修改系统用户ID
-			username = getInput('os system-username(%s):' % getpass.getuser()).strip()
+			tmp = os_user_name
+			if len(tmp) == 0:
+				tmp = getpass.getuser()
+				
+			username = getInput('os system-username(%s):' % tmp).strip()
 			if len(username) == 0:
-				username = getpass.getuser()
+				username = tmp
 
 			KBE_UID = getInput('usermod -u [No input is %s] %s, Enter new uid:' % (KBE_UID, username)).strip()
 			
@@ -456,18 +463,35 @@ def echoKBEVersion():
 
 def removeLinuxEnvironment(scope, name):
 	assert scope in ('user', 'system')
-	bodys = []
-	f = open(os.path.expanduser("~/.bashrc"))
-	for x in f.readlines():
-		if name in x:
-			continue
-		body.append(x)
-		
-	f = open(os.path.expanduser("~/.bashrc"), "w")
-	f.writelines(body)
-	f.close()
 	
-	syscommand('bash -c \'source \~/.bashrc\'', False)
+	files = []
+	
+	if os.geteuid() == 0:
+		if len(os_user_name) > 0:
+			files.append("%s/.bashrc" % (pwd.getpwnam(username).pw_dir))
+			files.append("%s/.bash_profile" % (pwd.getpwnam(username).pw_dir))
+			files.append("%s/.bash_profile" % (pwd.getpwnam(username).pw_dir))
+	else:
+		files.extend(["~/.bashrc", "~/.bash_profile", "~/.bash_profile"])
+	
+	for file in files:
+		bodys = []
+		f = open(os.path.expanduser(file))
+		#INFO_MSG("find %s: %s" % (file, name))
+		for x in f.readlines():
+			if name in x:
+				INFO_MSG("remove %s: %s" % (file, x))
+				continue
+				
+			bodys.append(x)
+		
+		f.close()
+		f = open(os.path.expanduser(file), "w")
+		f.writelines(bodys)
+		f.close()
+		
+		if os.geteuid() != 0:
+			syscommand('bash -c \'source %s\'' % file, False)
 	
 def setEnvironment(scope, name, value):
 	assert scope in ('user', 'system')
@@ -483,13 +507,21 @@ def setEnvironment(scope, name, value):
 		if name.lower() == 'uid':
 			uid, username = value
 			if uid != str(os.geteuid()):
-				ret, cret = syscommand('bash -c \'usermod -d /home/%s/ -u %s %s\'' % (username, uid, username), True)
+				ret, cret = syscommand('bash -c \'usermod -d /home/%s/ -u %s %s\'' % (pwd.getpwnam(username).pw_dir, uid, username), True)
 				INFO_MSG(ret)
 				INFO_MSG(cret)
 			return
 		
-		ret, cret = syscommand('bash -c \'echo "export %s=%s" >> ~/.bashrc\'' % (name, value), True)
-		syscommand('bash -c \'source \~/.bashrc\'', False)
+		userhome = "~"
+		if len(os_user_name) > 0:
+			userhome = pwd.getpwnam(os_user_name).pw_dir 
+		
+		f = open('%s/.bashrc' % userhome, 'a')
+		f.write("export %s=%s\n\n" % (name, value))
+		f.close()
+		
+		if os.geteuid() > 0:
+			syscommand('bash -c \'source %s/.bashrc\'' % userhome, False)
 
 def getWindowsEnvironmentKey(scope):
 	assert scope in ('user', 'system')
@@ -513,21 +545,23 @@ def remmoveEnvironment(scope, name):
 			winreg.DeleteValue(key, name)
 		except WindowsError:
 			pass
+	else:
+		removeLinuxEnvironment(scope, name)
 
 def removeKBEEnvironment():
 	INFO_MSG("Remove the KBEngine-environment variables.")
 	
-	remmoveEnvironment("user", "KBE_ROOT")
-	remmoveEnvironment("user", "KBE_RES_PATH")
-	remmoveEnvironment("user", "KBE_HYBRID_PATH")
-	remmoveEnvironment("user", "KBE_UID")
-	remmoveEnvironment("user", "INSTALLER_EVN_NAME")
-
 	global KBE_ROOT
 	global KBE_RES_PATH
 	global KBE_HYBRID_PATH
 	global KBE_UID
 	global INSTALLER_EVN_NAME
+	
+	remmoveEnvironment("user", "KBE_ROOT")
+	remmoveEnvironment("user", "KBE_RES_PATH")
+	remmoveEnvironment("user", "KBE_HYBRID_PATH")
+	remmoveEnvironment("user", "KBE_UID")
+	remmoveEnvironment("user", INSTALLER_EVN_NAME)
 	
 	KBE_ROOT = ""
 	KBE_RES_PATH = ""
@@ -551,6 +585,13 @@ def getEnvironment(scope, name):
 	else:
 		if name.lower() == 'uid':
 			return str(os.geteuid())
+		
+		if len(os_user_name) > 0:
+			ret, cret = syscommand('su -l %s -c \'echo ${%s}\'' % (os_user_name, name), True)
+			if len(ret) > 0:
+				value = ret[0].strip()
+		else:
+			value = os.environ.get(name, "")
 			
 	return value
 
@@ -595,8 +636,17 @@ def installMysql():
 	file = download(bin_mysql_url, file)[0]
 	INFO_MSG("wait for install:" + file)
 	syscommand(file, False)
+
+	
+	while True:
+		getInput("The MySQL service installation is complete? [yes|no]")
+		
+		if not findMysqlService():
+			ERROR_MSG("-  not found MySQL service.")
+			syscommand(file, False)
+
 	os.remove(file)
-	return not input("The MySQL service installation is complete? [yes|no]") == "no"
+	return True
 	
 def restartMsql():
 	global mysql_sercive_name
@@ -631,8 +681,8 @@ def findMysqlService():
 	if platform.system() == 'Windows':
 		ret, cret = syscommand('net start', True)
 	else:
-		ret, cret = syscommand('bash -c \'service --status-all\'', True)
-		
+		ret, cret = syscommand('bash -c \'service --status-all | grep \"mysql\"\'', True)
+
 	for s in ret:
 		if "mysql" in s.strip().lower():
 			if platform.system() != 'Windows':
@@ -640,7 +690,11 @@ def findMysqlService():
 					continue
 					
 			if len(mysql_sercive_name) == 0:
-				mysql_sercive_name = s.strip()
+				if "mysqld" in s:
+					mysql_sercive_name = "mysqld"
+				else:
+					mysql_sercive_name = "mysql"
+					
 				INFO_MSG("found mysql service[%s]" % mysql_sercive_name)
 				
 			return True
@@ -701,6 +755,7 @@ def modifyKBEConfig():
 	global kbe_res_path
 	
 	kbengine_defs = kbe_res_path + "server/kbengine_defs.xml"
+	INFO_MSG("Modified: %s" % kbengine_defs)
 	
 	if not os.path.isfile(kbengine_defs):
 		ERROR_MSG("not found [%s], KBEngine is not installed?" % kbengine_defs)
@@ -970,7 +1025,7 @@ def checkMysql():
 			ret = getInput("-  Allow automatic installation of MySQL? [yes/no]")
 			if ret != 'yes':
 				if not manual_installation:
-					if input("The MySQL service installation is complete? [yes|no]") != "no":
+					if getInput("The MySQL service installation is complete? [yes|no]") != "no":
 						manual_installation = True
 						continue
 						
@@ -1014,7 +1069,7 @@ def checkDeps():
 			INFO_MSG("- %s: yes" % dep)
 		else:
 			ERROR_MSG("- %s: no" % dep)
-			assert False
+			return False
 	
 	return True
 	
@@ -1062,7 +1117,7 @@ def get_sources_infos():
 def download_hookreport(count, block_size, total_size):
 	s = ""
 	if total_size <= 0:
-		s = '\rdownloading : %dMB' % (count * block_size / 1024 / 1024)
+		s = '\rdownloading : %.2fMB' % (count * block_size / 1024 / 1024.0)
 	else:
 		s = '\rdownloading : %d/%d (%02d%%)' % (count * block_size, total_size, 100.0 * count * block_size / total_size)
 
@@ -1080,9 +1135,210 @@ def download(currurl, fname = None):
 
 	return urllib.request.urlretrieve(currurl, filename = fname, reporthook = download_hookreport)
 
+def getSystemUser():
+	global os_user_name
+	global os_user_passwd
+	
+	if len(os_user_name) > 0:
+		return
+		
+	if platform.system() == 'Windows':
+		return
+
+	os_user_name = getInput("Please enter the KBE system account name(No input is kbe):")
+	if len(os_user_name) == 0:
+		os_user_name = "kbe"
+
+	hasuser = ""
+	try:
+		hasuser = pwd.getpwnam(os_user_name)
+	except:
+		pass
+
+	if len(hasuser) == 0:
+		if getInput("not found system-user[%s], create new user?: [yes|no]" % (os_user_name)) == "yes":
+			os_user_passwd = getInput("Please enter the KBE system account passwd(No input is kbe):")
+
+			if len(os_user_passwd) == 0:
+				os_user_passwd = "kbe"
+
+			syscommand('bash -c \'useradd %s -p%s\'' % (os_user_name, os_user_passwd), False)
+			syscommand('bash -c \'echo \'%s:%s\' | chpasswd\'' % (os_user_name, os_user_passwd), False)
+
+def getInstallPath():
+	global KBE_ROOT
+	global _install_path
+	_install_path = ""
+	
+	global _zip_kbengine_dirname
+	
+	KBE_ROOT = getEnvironment('user', 'KBE_ROOT')
+	
+	if _checkKBEEnvironment(False):
+		INFO_MSG("Already installed KBEngine, KBE_ROOT=[%s].\n" % (KBE_ROOT))
+		if getInput("Want to install to [%s]?[yes|no]" % (KBE_ROOT)) == "yes":
+			_install_path = ""
+			return
+
+	while True:
+		if os.path.isdir(_install_path):
+			break
+		
+		if len(os_user_name) == 0:
+			_install_path = getInput("Please enter the installation path:")
+		else:
+			_install_path = getInput("Please enter the installation path(No inout is %s):" % (pwd.getpwnam(os_user_name).pw_dir))
+			if len(_install_path) == 0:
+				_install_path = pwd.getpwnam(os_user_name).pw_dir
+
+		_install_path = _install_path + "/" + _zip_kbengine_dirname + "/"
+		if os.path.isdir(_install_path):
+			if getInput("Coverage of this directory? [yes|no]") == "yes":
+				break
+				
+			ERROR_MSG("%s has exist!" % _install_path)
+			_install_path = ""
+			continue
+		
+		break
+	
+	if not os.path.isdir(_install_path):
+		try:
+			os.mkdir(_install_path)
+		except:
+			ERROR_MSG("path[%s] is error!" % _install_path)
+			_install_path = ""
+			getInstallPath()
+			
+def copyFilesTo(root_src_dir, root_dst_dir):
+	count = 0
+	
+	total_count = sum([len(files) for root, dirs, files in os.walk(root_src_dir)])
+	
+	for src_dir, dirs, files in os.walk(root_src_dir):
+		dst_dir = src_dir.replace(root_src_dir, root_dst_dir)
+		if not os.path.exists(dst_dir):
+			os.mkdir(dst_dir)
+	        
+		for file_ in files:
+			src_file = os.path.join(src_dir, file_)
+			dst_file = os.path.join(dst_dir, file_)
+
+			if os.path.exists(dst_file):
+				os.remove(dst_file)
+			    
+			shutil.move(src_file, dst_dir)
+			count += 1
+	        
+			s = "\rmoved: %d/%d (%d%%)" % (count, total_count, (count / float(total_count)) * 100)
+			sys.stdout.write(s)
+			sys.stdout.flush()
+	
+	INFO_MSG("")
+
+def copy_new_to_kbengine_dir(checksources = True):
+	global _install_path
+	global KBE_ROOT
+	global KBE_RES_PATH
+	global KBE_HYBRID_PATH
+	global KBE_UID
+	global kbe_res_path
+	global _zip_kbengine_path
+	global _zip_kbengine_dirname
+	
+	currkbedir = _zip_kbengine_path + "/" + _zip_kbengine_dirname
+	
+	if len(_install_path) > 0:
+		KBE_ROOT = _install_path
+		if platform.system() == 'Windows':
+			KBE_RES_PATH = "%KBE_ROOT%kbe/res/;%KBE_ROOT%demo/;%KBE_ROOT%demo/res/"
+			if platform.architecture()[0] == '32bit':
+				KBE_HYBRID_PATH = "%KBE_ROOT%kbe/bin/Hybrid/"
+			else:
+				KBE_HYBRID_PATH = "%KBE_ROOT%kbe/bin/Hybrid64/"
+		else:
+			KBE_RES_PATH = "$KBE_ROOT/kbe/res/:$KBE_ROOT/demo/:$KBE_ROOT/demo/res/"
+			if platform.architecture()[0] == '32bit':
+				KBE_HYBRID_PATH = "$KBE_ROOT/kbe/bin/Hybrid/"
+			else:
+				KBE_HYBRID_PATH = "$KBE_ROOT/kbe/bin/Hybrid64/"
+		
+		setEnvironment('user', 'KBE_ROOT', KBE_ROOT)
+		setEnvironment('user', 'KBE_RES_PATH', KBE_RES_PATH)
+		setEnvironment('user', 'KBE_HYBRID_PATH', KBE_HYBRID_PATH)
+		
+		INFO_MSG("KBE_ROOT = %s" % KBE_ROOT)
+		INFO_MSG("KBE_RES_PATH = %s" % KBE_RES_PATH)
+		INFO_MSG("KBE_HYBRID_PATH = %s" % KBE_HYBRID_PATH)
+		
+		INFO_MSG("\n\nInstalling KBEngine...")
+		INFO_MSG("moving %s to %s..." % (currkbedir, _install_path))
+		copyFilesTo(currkbedir, _install_path)
+		
+		if platform.system() != 'Windows':
+			syscommand('bash -c \'chmod -R 755 %s\'' % (KBE_ROOT), True)
+			
+		return
+	
+	KBE_ROOT = getEnvironment('user', 'KBE_ROOT')
+	KBE_RES_PATH = getEnvironment('user', 'KBE_RES_PATH')
+	KBE_HYBRID_PATH = getEnvironment('user', 'KBE_HYBRID_PATH')
+	
+	currkbedir = currkbedir.replace("\\", "/").replace("//", "/")
+	KBE_ROOT = KBE_ROOT.replace("\\", "/").replace("//", "/")
+	
+	if currkbedir == KBE_ROOT:
+		WARNING_MSG("currkbedir[%s] == KBE_ROOT[%s]" % (currkbedir, KBE_ROOT))
+		return
+		
+	INFO_MSG("\n\nInstalling KBEngine[%s]..." % KBE_ROOT)
+	kbe_res_path1 = kbe_res_path.replace("%KBE_ROOT%", KBE_ROOT).replace("$KBE_ROOT", KBE_ROOT)
+	if len(kbe_res_path1) == 0:
+		kbe_res_path1 = KBE_ROOT + "/kbe/res"
+		
+	if os.path.isdir(KBE_ROOT):
+		if os.path.isdir(kbe_res_path1):
+			if getInput('Found that the existing directory(%s), whether to replace the: [yes|no]?' % kbe_res_path1) == "yes":
+				# shutil.rmtree(kbe_res_path1)
+				pass
+				
+		kbe_tools_path = KBE_ROOT + "/kbe/tools"
+		kbe_tools_path = kbe_tools_path.replace("\\", "/").replace("//", "/")
+		if os.path.isdir(kbe_tools_path):
+			if getInput('Found that the existing directory(%s), whether to replace the: [yes|no]?' % kbe_tools_path) == "yes":
+				# shutil.rmtree(kbe_tools_path)
+				pass
+					
+		if checksources:
+			srcpath = KBE_ROOT + "/kbe/src"
+			srcpath = srcpath.replace("\\", "/").replace("//", "/")
+			if os.path.isdir(srcpath):
+				if getInput('Found that the existing directory(%s), whether to replace the: [yes|no]?' % (srcpath)) == "yes":
+					# shutil.rmtree(srcpath)
+					pass
+					
+			copyFilesTo(currkbedir + "/kbe/src", srcpath)
+		else:
+			binpath = KBE_ROOT + "/kbe/bin"
+			binpath = binpath.replace("\\", "/").replace("//", "/")
+			if os.path.isdir(binpath):
+				if getInput('Found that the existing directory(%s), whether to replace the: [yes|no]?' % (binpath)) == "yes":
+					# shutil.rmtree(binpath)
+					pass
+					
+			copyFilesTo(currkbedir + "/kbe/bin", binpath)
+			
+		copyFilesTo(currkbedir + "/kbe/tools", kbe_tools_path)
+		copyFilesTo(currkbedir + "/kbe/res", kbe_res_path1)
+
+	if platform.system() != 'Windows':
+		syscommand('bash -c \'chmod -R 755 %s\'' % (KBE_ROOT), True)
+		
 def download_sources(release = True):
 	global _zip_kbengine_dirname
 	_zip_kbengine_dirname = ""
+	global _zip_kbengine_path
+	_zip_kbengine_path = ""
 	
 	OUT_MSG("")
 	INFO_MSG("Getting the latest source code...")
@@ -1104,80 +1360,28 @@ def download_sources(release = True):
 	INFO_MSG(descrs)
 
 	file = download(currurl)[0]
-	namelist = extract_file(file)
+	_zip_kbengine_path = tempfile.mkdtemp("_kbengine")
+	namelist = extract_file(file, _zip_kbengine_path)
 	os.remove(file)
-
+	
 	for n in namelist[0].replace("\\", "/").split("/"):
 		if "kbengine" in n:
 			_zip_kbengine_dirname = n
 			break
 
-def copy_new_to_kbengine_dir(checksources = True):
-	checkKBEEnvironment()
-	global KBE_ROOT
-	global KBE_RES_PATH
-	global KBE_HYBRID_PATH
-	global KBE_UID
-	global kbe_res_path
-	
-	KBE_ROOT = getEnvironment('user', 'KBE_ROOT')
-	KBE_RES_PATH = getEnvironment('user', 'KBE_RES_PATH')
-	KBE_HYBRID_PATH = getEnvironment('user', 'KBE_HYBRID_PATH')
-	
-	currkbedir = os.getcwd() + "/" + _zip_kbengine_dirname
-	currkbedir = currkbedir.replace("\\", "/").replace("//", "/")
-	KBE_ROOT = KBE_ROOT.replace("\\", "/").replace("//", "/")
-	
-	if currkbedir == KBE_ROOT:
-		WARNING_MSG("currkbedir[%s] == KBE_ROOT[%s]" % (currkbedir, KBE_ROOT))
-		return
-		
-	INFO_MSG("\n\nInstall KBEngine[%s]..." % KBE_ROOT)
-	kbe_res_path1 = kbe_res_path.replace("%KBE_ROOT%", KBE_ROOT).replace("$KBE_ROOT", KBE_ROOT)
-	if len(kbe_res_path1) == 0:
-		kbe_res_path1 = KBE_ROOT + "/kbe/res"
-		
-	if os.path.isdir(KBE_ROOT):
-		if os.path.isdir(kbe_res_path1):
-			if getInput('Found that the existing directory(%s), whether to replace the: [yes|no]?' % kbe_res_path1) == "yes":
-				shutil.rmtree(kbe_res_path1)
-		
-		kbe_tools_path = KBE_ROOT + "/kbe/tools"
-		kbe_tools_path = kbe_tools_path.replace("\\", "/").replace("//", "/")
-		if os.path.isdir(kbe_tools_path):
-			if getInput('Found that the existing directory(%s), whether to replace the: [yes|no]?' % kbe_tools_path) == "yes":
-				shutil.rmtree(kbe_tools_path)
-		
-		if checksources:
-			srcpath = KBE_ROOT + "/kbe/src"
-			srcpath = srcpath.replace("\\", "/").replace("//", "/")
-			if os.path.isdir(srcpath):
-				if getInput('Found that the existing directory(%s), whether to replace the: [yes|no]?' % (srcpath)) == "yes":
-					shutil.rmtree(srcpath)
-			
-			shutil.copytree(currkbedir + "/kbe/src", srcpath)
-		else:
-			binpath = KBE_ROOT + "/kbe/bin"
-			binpath = binpath.replace("\\", "/").replace("//", "/")
-			if os.path.isdir(binpath):
-				if getInput('Found that the existing directory(%s), whether to replace the: [yes|no]?' % (binpath)) == "yes":
-					shutil.rmtree(binpath)
-			
-			shutil.copytree(currkbedir + "/kbe/src", srcpath)
-			
-		shutil.copytree(currkbedir + "/kbe/tools", kbe_tools_path)
-		shutil.copytree(currkbedir + "/kbe/res", kbe_res_path1)
-
 def download_binary():
 	global _zip_kbengine_dirname
 	_zip_kbengine_dirname = ""
+	global _zip_kbengine_path
+	_zip_kbengine_path = ""
 
 	OUT_MSG("")
 	INFO_MSG("Getting the latest KBEngine...")        
 	file = download(bin_zip_url)[0]
-	namelist = extract_file(file)
+	_zip_kbengine_path = tempfile.mkdtemp("_kbengine")	
+	namelist = extract_file(file, _zip_kbengine_path)
 	os.remove(file)
-
+	
 	for n in namelist[0].replace("\\", "/").split("/"):
 		if "kbengine" in n:
 			_zip_kbengine_dirname = n
@@ -1194,54 +1398,107 @@ def getRealUrl(url):
 	
 	return url
 	
+def getCompressedFileRootDir(src_file):
+	f = None
+	
+	if ".tar" in src_file:
+		f = tarfile.open(src_file)
+		namelist = f.getnames()
+	else:
+		f = zipfile.ZipFile(src_file, 'r')
+		namelist = f.namelist()
+	
+	f.close()
+	
+	return namelist[0]
+	
 def extract_file(src_file, extractPath = "./"):
 	OUT_MSG("")
-	INFO_MSG("unzip(%s)..." % (src_file))
-
-	f = zipfile.ZipFile(src_file, 'r')
-	total_count = len(f.namelist())
+	
+	
+	f = None
+	total_count = 0
+	
+	if ".tar" in src_file:
+		f = tarfile.open(src_file)
+		namelist = f.getnames()
+		INFO_MSG("untgz(%s)..." % (src_file))
+	else:
+		f = zipfile.ZipFile(src_file, 'r')
+		namelist = f.namelist()
+		INFO_MSG("unzip(%s)..." % (src_file))
+	
+	total_count = len(namelist)
 	count = 0
 	
-	namelist = f.namelist()
-	for file in f.namelist():
+	for file in namelist:
 		f.extract(file, extractPath)
 		count += 1
-		s = "\rextract: %s %d/%d(%d%%)" % (file, count, total_count, (count / total_count) * 100)
+
+		s = "\rextract: %d/%d (%d%%)" % (count, total_count, (count / float(total_count)) * 100)
 		sys.stdout.write(s)
 		sys.stdout.flush()
 	
+	f.close()
 	OUT_MSG("")
 	INFO_MSG("unzip(%s) is completed(%d)!\n\n" % (src_file, len(namelist)))
 	return namelist
 
 def normalinstall():
-	checkDeps()
-	if modifyKBEConfig():
-		INFO_MSG("KBEngine has been successfully installed.")
+	getSystemUser()
+	if checkDeps() and modifyKBEConfig():
+		INFO_MSG("KBEngine has been successfully installed!")
 	else:
 		ERROR_MSG("KBEngine installation failed!")
+
+def installclean():
+	global _zip_kbengine_path
+	if len(_zip_kbengine_path) > 0:
+		INFO_MSG("Cleanup temporary files...")
+		shutil.rmtree(_zip_kbengine_path)
 		
 def sourceinstall():
 	download_sources()
+	getSystemUser()
+	getInstallPath()
 	copy_new_to_kbengine_dir(True)
-	
-	if platform.system() != 'Windows':
-		global KBE_ROOT
-		syscommand('bash -c \'chmod -R 755 %s\'' % (KBE_ROOT), True)
+	installclean()
 	
 	normalinstall()
 	
 def binaryinstall():
 	download_binary()
+	getSystemUser()
+	getInstallPath()
 	copy_new_to_kbengine_dir(False)
+	installclean()
 	
-	if platform.system() != 'Windows':
-		global KBE_ROOT
-		syscommand('bash -c \'chmod -R 755 %s\'' % (KBE_ROOT), True)
-		
+	normalinstall()
+
+def localfileinstall(file):
+	global _zip_kbengine_dirname
+	_zip_kbengine_dirname = ""
+	global _zip_kbengine_path
+	_zip_kbengine_path = ""
+	
+	getSystemUser()
+	_zip_kbengine_dirname = getCompressedFileRootDir(file)
+	getInstallPath()
+	
+	_zip_kbengine_path = tempfile.mkdtemp("_kbengine")
+	namelist = extract_file(file, _zip_kbengine_path)
+	
+	for n in namelist[0].replace("\\", "/").split("/"):
+		if "kbengine" in n:
+			_zip_kbengine_dirname = n
+			break
+			
+	copy_new_to_kbengine_dir(False)
+	installclean()
 	normalinstall()
 	
 def uninstall():
+	global KBE_ROOT
 	INFO_MSG("Uninstall KBEngine ...")
 	
 	if len(KBE_ROOT) > 0:
@@ -1252,53 +1509,48 @@ def uninstall():
 	INFO_MSG("Uninstall KBEngine completed!")
 
 def processCommand():
-	shortargs = 'vheuir'  
-	longargs = ['install=', 'uninstall', 'version', 'evn', 'resetevn', 're', 'help']  
-
-	try:
-		opts, args = getopt.getopt(sys.argv[1:], shortargs, longargs) 
-	except getopt.GetoptError: 
-		ERROR_MSG('argv is error! argv=%s' % (sys.argv[1:]))
+	const_args = {
+		'uninstall'	: uninstall, 
+		'version'	: echoKBEVersion, 
+		'evn'		: echoKBEEnvironment, 
+		'resetevn'	: resetKBEEnvironment, 
+		'help'		: help
+	}
+	  
+	if len(sys.argv[1:]) == 0:
 		hello()
 		help() 
 		return
-
-	if len(opts) == 0:
-		hello()
-		help() 
+		
+	argv = sys.argv[1:][0]
+	func = const_args.get(argv)
+	if func:
+		func()
 		return
-
-	for o, a in opts: 
-		if o in ("-v", "--version"):  
-			echoKBEVersion()
-			sys.exit() 
-		elif o in ("-h", "--help"):  
-			hello()
-			help()  
-			sys.exit()  
-		elif o in ("-e", "--evn"):  
-			echoKBEEnvironment()
-			sys.exit() 
-		elif o in ("-r", "--resetevn"):  
-			resetKBEEnvironment()
-			sys.exit() 
-		elif o in ("-u", '--uninstall'):  
-			hello()
-			uninstall()
-			sys.exit() 
-		elif o in ("-i", "--install"):  
-			hello()
-			
-			if a == "remotesrc":
-				sourceinstall()
-			elif a == "bin":
-				binaryinstall()
-			else:
+	else:
+		if 'install' in argv:
+			if platform.system() != 'Windows':
+				if os.geteuid() != 0:
+					assert False and "You must use the root to installation!"
+	
+			if argv == 'install':
 				normalinstall()
-				
-			sys.exit() 
-		else:  
-			assert False, "unhandled option"  
+				return
+			else:
+				if argv.startswith("install="):
+					argv = argv.replace("install=", "")
+					if argv == "remotesrc":
+						sourceinstall()
+					elif argv == "remotebin":
+						binaryinstall()
+					elif os.path.isfile(argv):
+						localfileinstall(argv)
+					else:
+						assert False
+					
+				return
+
+	help() 
  
 if __name__ == "__main__":
 	processCommand()

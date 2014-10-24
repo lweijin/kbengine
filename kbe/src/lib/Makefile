@@ -20,6 +20,19 @@ LIBDIR=$(KBE_ROOT)/kbe/src/lib/bin
 
 all install clean full:
 	test -d $(LIBDIR) || mkdir $(LIBDIR)
+	cd dependencies/zip && $(MAKE) $@
+	cd dependencies/g3dlite && $(MAKE) $@
+	cd dependencies/tinyxml && $(MAKE) $@
+	cd dependencies/sigar/linux && $(MAKE) $@
+	cd dependencies/jsoncpp/src/lib_json && $(MAKE) $@
+	cd dependencies/tmxparser && $(MAKE) $@
+	cd dependencies/jwsmtp/jwsmtp/jwsmtp && $(MAKE) $@
+	cd dependencies/jemalloc && $(MAKE) $@
+	cd dependencies/apr && $(MAKE) $@
+	cd dependencies/expat && $(MAKE) $@
+	cd dependencies/apr-util && $(MAKE) $@
+	cd dependencies/log4cxx && $(MAKE) $@
+	cd python && $(MAKE) $@
 	cd client_lib && $(MAKE) $@
 	cd cstdkbe && $(MAKE) $@
 	cd db_mysql && $(MAKE) $@
@@ -34,14 +47,4 @@ all install clean full:
 	cd helper && $(MAKE) $@
 	cd thread && $(MAKE) $@
 	cd xmlplus && $(MAKE) $@
-	cd dependencies/zip && $(MAKE) $@
-	cd dependencies/g3dlite && $(MAKE) $@
-	cd dependencies/tinyxml && $(MAKE) $@
-	cd dependencies/sigar/linux && $(MAKE) $@
-	cd dependencies/jsoncpp/src/lib_json && $(MAKE) $@
-	cd dependencies/tmxparser && $(MAKE) $@
-	cd dependencies/jwsmtp/jwsmtp/jwsmtp && $(MAKE) $@
-	cd dependencies/jemalloc && $(MAKE) $@
 
-version kbeversion kbe_version:
-	@$(MAKE) -s -C server $@

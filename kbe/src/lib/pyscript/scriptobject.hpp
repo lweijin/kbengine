@@ -335,6 +335,7 @@ public:																						\
 		SCRIPT_ERROR_CHECK();																\
 		_##CLASS##_py_installed = true;														\
 																							\
+		ScriptObject::scriptObjectTypes[name] = &_scriptType;								\
 	}																						\
 																							\
 	/** 卸载当前脚本模块 
@@ -476,6 +477,11 @@ public:
 	ScriptObject(PyTypeObject* pyType, bool isInitialised = false);
 	~ScriptObject();
 
+	// 所有的kbe脚本类别
+	typedef KBEUnordered_map<std::string, PyTypeObject*> SCRIPTOBJECT_TYPES;
+	static SCRIPTOBJECT_TYPES scriptObjectTypes;
+	static PyTypeObject* getScriptObjectType(const std::string& name);
+
 	/** 
 		脚本对象引用计数 
 	*/
@@ -489,6 +495,10 @@ public:
 	*/
 	PyObject* tp_repr();
 	PyObject* tp_str();
+
+	DECLARE_PY_GET_MOTHOD(py__module__);
+	DECLARE_PY_GET_MOTHOD(py__qualname__);
+	DECLARE_PY_GET_MOTHOD(py__name__);
 
 	/** 
 		脚本请求创建一个该对象 
